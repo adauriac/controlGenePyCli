@@ -5,3 +5,4 @@ needs:
 - serial
 - minimalmodbus
 - serial.tools.list_ports mais je pense que ce module vient avec serial'(?)
+- no thread or exception, polling watchdog

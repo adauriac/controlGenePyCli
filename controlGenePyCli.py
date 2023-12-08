@@ -2,18 +2,44 @@
 import serial
 import minimalmodbus
 import serial.tools.list_ports as port_list
+import time,sys
+import msvcrt
+"""
+                                 WITH A POLLING WATCHDOG (NO THREAD OR RACE)
+Connection at BAUD,'N',8,1.
+The choosen COM is asked to keyboard if there are more than one.
+An infinite loop tests the keyboard in a NON blocking way therefore the loop is short.
+At each beginning of the loop the current time is compared to the time of the last test of the connection.
+If the last test is too old a new test is performed.
+If a reading/writing of a register is too long, the program aborts.
+"""
 
-"""
-                                 VERSION SANS TEST PERMANENT
-Connecte a BAUD,'N',8,1. La com choisie est demandée au clavier s'il y a plus d'une seule possibilité.
-En cas de non-connexion un message est affiché et le programme se termine
-En cas de lecture ou d'écriture non finie apres TIMEOUT seconde message est affiché et le programme se termine
-"""
-TIMEOUT = 2 # secondes
+TIMEOUT = 0.1 # for reading/writing register a real number in secondes 
 BAUD = 9600
 SLAVE = 3
 ALIVE_ADDRESS = 205
 ALIVE_VALUE = 330
+WATCHDOGTIMESEC = 1  # a float in second, a new test is made is 
+
+class nonBlockingString:
+    """
+    Cette classe permet une lecture NON bloquente du clavier.
+    La chaine se termine par '\\n' ou '\\r', elle n'est retournee
+    par getKbd() que lorsqu'elle est complete, sinon None est retourne
+    """
+    def __init__(self):
+        self.str = ""
+    def getKbd(self):
+        """
+        retourne la chaine si elle est complete (finie par \\n ou \\r) None sinon
+        """
+        if msvcrt.kbhit():
+            self.car = msvcrt.getche()
+            self.str += self.car.decode()
+            if self.car == b'\r' or self.car == b'\n':
+                aux = self.str
+                self.str = ""
+                return aux
 
 def getRegisters():
     """
@@ -30,42 +56,51 @@ def getRegisters():
 # FIN def getRegisters():
 
 def isAlive():
-    v = readRegister(ALIVE_ADDRESS)
-    return v==ALIVE_VALUE
+    ans = readRegister(ALIVE_ADDRESS)
+    return ans==ALIVE_VALUE
 # FIN def isAlive():
 
 def writeRegister(add,value):
     """
     exit if can't write
     """
+    # print(f"entering writeRegister {add}")
+    readingPossible = False
     ok = 1
     try:
         instrument.write_register(add,value)
     except :
-        print("Could not write register at 0x%x = %d"%(add,add))
+        sys.stdout.writelines("writeRegister: Could not write register at 0x%x = %d\n"%(add,add))
+        sys.stdout.flush()
         ok = 0
     if not ok:
         exit(1) # write error
+    #print(f"leaving writeRegister {add}")
 # FIN def writeRegister(add,value):
 
 def readRegister(add):
     """
     return the int value read, exit if can't read
     """
+    # print(f"entering readRegister {add}");
+    readingPossible = False    
     ok = 1
     ans = [-1]
     try:
         ans = instrument.read_registers(add,1)
     except :
-        print("Could not read register at 0x%x = %d"%(add,add))
-        if add  == ALIVE_ADDRESS:
-            print("The board is probably not powered")
+        sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
+        if add == ALIVE_ADDRESS: # ie probably a test isAlive()
+            sys.stdout.writelines("The board is probably not powered\n")
+        sys.stdout.flush()
         ok = 0
     if not ok:
         exit(2) #read error
+    # print(f"leaving readRegister {add}")
     return ans[0]
 # FIN  def readRegister(add):
-  
+
+cpt = 0
 quoi = []
 ou = []
 index= dict()
@@ -180,13 +215,16 @@ addWritables = list(map(lambda x:ou[x],writables))
 ports = list(port_list.comports())
 # choice of the port to use
 if len(ports)==0:
-    print("No serial port available")
+    sys.stdout.writelines("No serial port available\n")
+    sys.stdout.flush()
     exit(3) # no serial port
 elif len(ports)>1:
-    print("there are several possible ports")
+    sys.stdout.writelines("there are several possible ports\n")
+    sys.stdout.flush()
     for k,p in enumerate(ports):
         ser = serial.Serial(p.device)
-        print("%d %s"%(k,ser.name))
+        sys.stdout.writelines("%d %s\n"%(k,ser.name))
+        sys.stdout.flush()
         ser.close()
     while True:
         ans = input("choose one in [0,%d] "%(len(ports)-1))
@@ -208,20 +246,41 @@ instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
 instrument.mode = 'rtu'
 # instrument.debug = True
 instrument.timeout = ser.timeout
-print("using %s at %d baud parity %c"%(ser.name,instrument.serial.baudrate,instrument.serial.parity))
+sys.stdout.writelines("using %s at %d baud parity %c\n"%(ser.name,instrument.serial.baudrate,instrument.serial.parity))
+sys.stdout.flush()
 isAlive()
 
-# ######################################################################################
+cpt = 0
+#######################################################################################
 #                               INFINITE LOOP
-# ######################################################################################
+#######################################################################################
+mySt = nonBlockingString() # pour faire une lecture non bloquante du clavier
+somethingNew = True
+lastCheckAlive = 0
 while True:
-    ans = getRegisters()
-    if ans=="":
-        exit(1)
-    else:
-        print(ans)
-    ans = input("entrer le numéro du registre et la valeur a y mettre, ou q pour quitter ")
-    if ans=='q':
+    time.sleep(0.1)
+    cpt += 1
+    currentTime = time.time()
+    if currentTime - lastCheckAlive > WATCHDOGTIMESEC:
+        lastCheckAlive = currentTime
+        if not isAlive():
+            sys.stdout.writelines("The connection is down !")
+            sys.stdout.flush()
+            break
+    if somethingNew:
+        somethingNew = False
+        ans = getRegisters()
+        sys.stdout.writelines(ans)
+        sys.stdout.writelines("\nenter the register number and the value to set, or q for quit : ")
+        sys.stdout.flush()
+    # ans = input("entrer le numéro du registre et la valeur a y mettre, ou q pour quitter ")
+    ans = mySt.getKbd()
+    if ans==None:
+        continue
+    somethingNew = True
+    sys.stdout.writelines("\n")
+    sys.stdout.flush()
+    if ans=='q\r':
         break
     ans = ans.split()
     if len(ans)!=2:
@@ -232,15 +291,16 @@ while True:
         continue
     o,q = ans
     if o<0 or o>=len(ou):
-        print("the register %d is not a writable register"%o)
+        sys.stdout.writelines("the register %d is not a writable register\n"%o)
+        sys.stdout.flush()
         continue
     if not ou[o] in addWritables:
-        print("This register is not writeable")
+        sys.stdout.writelines("This register is not writeable\n")
+        sys.stdout.flush()
         continue
     if q<0 or q>=65536:
-        print("the value %d is out of bonds"%q)
+        sys.stdout.writelines("the value %d is out of bonds\n"%q)
+        sys.stdout.flush()
         continue
     vals[o] = q
-    # instrument.write_registers(ou[o],[vals[o]])
     writeRegister(ou[o],q)
-exit(0)
