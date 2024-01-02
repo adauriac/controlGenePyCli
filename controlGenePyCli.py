@@ -212,38 +212,34 @@ if len(ports)==0:
     sys.stdout.writelines("No serial port available\n")
     sys.stdout.flush()
     exit(3) # no serial port
-elif len(ports)>1:
-    sys.stdout.writelines("there are several possible ports\n")
+#    sys.stdout.writelines("there are several possible ports\n")
+lesInstruments = []
+for k,port in enumerate(ports):
+    ser = serial.Serial(port.device)
+    ser.timeout = TIMEOUT # seconds
+    instrument = minimalmodbus.Instrument(ser, SLAVE)
+    instrument.serial.baudrate = BAUD
+    instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
+    instrument.mode = 'rtu'
+    # instrument.debug = True
+    instrument.timeout = ser.timeout
+    try:
+        ans = instrument.read_registers(ALIVE_ADDRESS,1)
+        lesInstruments.append(instrument)        
+    except :
+        pass
+    ser.close()
+k = 0 # index du port a utiliser
+if len(lesInstruments)>1: # sinon k=0
+    for k,inst in enumerate(lesInstruments):
+        print("index : %d port : %s\n"%(k,inst.serial.port))
+    sys.stdout.writelines("Enter the index of the port you want use ");
     sys.stdout.flush()
-    for k,p in enumerate(ports):
-        ser = serial.Serial(p.device)
-        sys.stdout.writelines("%d %s\n"%(k,ser.name))
-        sys.stdout.flush()
-        ser.close()
-    while True:
-        ans = input("choose one in [0,%d] "%(len(ports)-1))
-        try:
-            k = int(ans)
-            if k>=0 and k<len(ports):
-                break
-        except:
-            pass
-else:
-    k = 0
-    
-port = ports[k].device
-ser = serial.Serial(port)
-ser.timeout = TIMEOUT # seconds
-instrument = minimalmodbus.Instrument(ser, SLAVE)
-instrument.serial.baudrate = BAUD
-instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
-instrument.mode = 'rtu'
-# instrument.debug = True
-instrument.timeout = ser.timeout
-sys.stdout.writelines("using %s at %d baud parity %c\n"%(ser.name,instrument.serial.baudrate,instrument.serial.parity))
+    ans = sys.stdin.readline()
+    k = int(ans)
+instrument = lesInstruments[k]
+sys.stdout.writelines("using %s at %d baud parity %c\n"%(instrument.serial.name,instrument.serial.baudrate,instrument.serial.parity))
 sys.stdout.flush()
-isAlive()
-
 cpt = 0
 #######################################################################################
 #                               INFINITE LOOP
