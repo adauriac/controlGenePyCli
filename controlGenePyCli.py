@@ -3,7 +3,6 @@ import serial
 import minimalmodbus
 import serial.tools.list_ports as port_list
 import time,sys
-import msvcrt
 """
                                  WITH A POLLING WATCHDOG (NO THREAD OR RACE)
 Connection at BAUD,'N',8,1.
@@ -21,274 +20,317 @@ ALIVE_ADDRESS = 205
 ALIVE_VALUE = 330
 WATCHDOGTIMESEC = 1  # a float in second, a new test is made is 
 
-class nonBlockingString:
-    """
-    Cette classe permet une lecture NON bloquente du clavier.
-    La chaine se termine par '\\n' ou '\\r', elle n'est retournee
-    par getKbd() que lorsqu'elle est complete, sinon None est retourne
-    """
+class geneControler:
+    ou = []
+    quoi = []
+    index= dict()
+    vals = []
+    types = [] # "led", "button", "output", "input"
+    instrument = "";
     def __init__(self):
-        self.str = ""
-    def getKbd(self):
+        self.quoi.append("Arret d'urgence");
+        self.ou.append(0x65);
+        self.index["Arret d'urgence"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("led")
+
+        self.quoi.append("Defaut critique");
+        self.ou.append(0x66);
+        self.index["Defaut critique"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("led")
+
+        self.quoi.append("Mesure debit");
+        self.ou.append(0x68);
+        self.index["Mesure debit"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("self.output")
+
+        self.quoi.append("Mesure puissance");
+        self.ou.append(0x6B);
+        self.index["Mesure puissance"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("output")
+
+        self.quoi.append("Etat du procede");
+        self.ou.append(0x6E);
+        self.index["Etat du procede"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("led")
+
+        self.quoi.append("Tension PFC ");
+        self.ou.append(0x72);
+        self.index["Tension PFC "] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("output")
+
+        self.quoi.append("Courant pont");
+        self.ou.append(0x7F);
+        self.index["Courant pont"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("output")
+
+        self.quoi.append("Puissance limite basse");
+        self.ou.append(0x96);
+        self.index["Puissance limite basse"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("input")
+
+        self.quoi.append("Puissance limite haute");
+        self.ou.append(0x97);
+        self.index["Puissance limite haute"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("input")
+
+        self.quoi.append("Debit bas");
+        self.ou.append(0xA0);
+        self.index["Debit bas"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("input")
+
+        self.quoi.append("Debit haut");
+        self.ou.append(0xA1);
+        self.index["Debit haut"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("input")
+
+        self.quoi.append("Consigne puissance");
+        self.ou.append(0xB2);
+        self.index["Consigne puissance"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("input")
+
+        self.quoi.append("Consigne debit");
+        self.ou.append(0xB3);
+        self.index["Consigne debit"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("input")
+
+        self.quoi.append("Generateur");
+        self.ou.append(0xBB);
+        self.index["Generateur"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("button")
+
+        self.quoi.append("Gaz");
+        self.ou.append(0xBC);
+        self.index["Gaz"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("button")
+
+        self.quoi.append("Plasma");
+        self.ou.append(0xBD);
+        self.index["Plasma"] = len(self.ou)-1;
+        self.vals.append(-1)
+        self.types.append("button")
+        # FIN __init__()
+        
+    def readRegister(self,add):
         """
-        retourne la chaine si elle est complete (finie par \\n ou \\r) None sinon
+        return the int value read, exit if can't read
         """
-        if msvcrt.kbhit():
-            self.car = msvcrt.getche()
-            self.str += self.car.decode()
-            if self.car == b'\r' or self.car == b'\n':
-                aux = self.str
-                self.str = ""
-                return aux
-
-def getRegisters():
-    """
-    set vals and return a string ready to be printed
-    if a reading fails an empty string is return instead
-    """
-    ans = ""
-    ok = 1
-    for i in range(len(ou)):
-        v = readRegister(ou[i])
-        vals[i] = v
-        ans += "%2d Ox%x %3d %26s %5d  %s\n"%(i,ou[i],ou[i],quoi[i],vals[i],type[i])
-    return ans
-# FIN def getRegisters():
-
-def isAlive():
-    ans = readRegister(ALIVE_ADDRESS)
-    return ans==ALIVE_VALUE
-# FIN def isAlive():
-
-def writeRegister(add,value):
-    """
-    exit if can't write
-    """
-    # print(f"entering writeRegister {add}")
-    readingPossible = False
-    ok = 1
-    try:
-        instrument.write_register(add,value)
-    except :
-        sys.stdout.writelines("writeRegister: Could not write register at 0x%x = %d\n"%(add,add))
-        sys.stdout.flush()
-        ok = 0
-    if not ok:
-        exit(1) # write error
-    #print(f"leaving writeRegister {add}")
-# FIN def writeRegister(add,value):
-
-def readRegister(add):
-    """
-    return the int value read, exit if can't read
-    """
-    # print(f"entering readRegister {add}");
-    readingPossible = False    
-    ok = 1
-    ans = [-1]
-    try:
-        ans = instrument.read_registers(add,1)
-    except :
-        sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
-        if add == ALIVE_ADDRESS: # ie probably a test isAlive()
-            sys.stdout.writelines("The board is probably not powered\n")
-        sys.stdout.flush()
-        ok = 0
-    if not ok:
-        exit(2) #read error
-    # print(f"leaving readRegister {add}")
-    return ans[0]
-# FIN  def readRegister(add):
-
-cpt = 0
-quoi = []
-ou = []
-index= dict()
-vals = []
-type = [] # "led", "button", "output", "input"
-
-quoi.append("Arret d'urgence");
-ou.append(0x65);
-index["Arret d'urgence"] = len(ou)-1;
-vals.append(-1)
-type.append("led")
-
-quoi.append("Defaut critique");
-ou.append(0x66);
-index["Defaut critique"] = len(ou)-1;
-vals.append(-1)
-type.append("led")
-
-quoi.append("Mesure debit");
-ou.append(0x68);
-index["Mesure debit"] = len(ou)-1;
-vals.append(-1)
-type.append("output")
-
-quoi.append("Mesure puissance");
-ou.append(0x6B);
-index["Mesure puissance"] = len(ou)-1;
-vals.append(-1)
-type.append("output")
-
-quoi.append("Etat du procede");
-ou.append(0x6E);
-index["Etat du procede"] = len(ou)-1;
-vals.append(-1)
-type.append("led")
-
-quoi.append("Tension PFC ");
-ou.append(0x72);
-index["Tension PFC "] = len(ou)-1;
-vals.append(-1)
-type.append("output")
-
-quoi.append("Courant pont");
-ou.append(0x7F);
-index["Courant pont"] = len(ou)-1;
-vals.append(-1)
-type.append("output")
-
-quoi.append("Puissance limite basse");
-ou.append(0x96);
-index["Puissance limite basse"] = len(ou)-1;
-vals.append(-1)
-type.append("input")
-
-quoi.append("Puissance limite haute");
-ou.append(0x97);
-index["Puissance limite haute"] = len(ou)-1;
-vals.append(-1)
-type.append("input")
-
-quoi.append("Debit bas");
-ou.append(0xA0);
-index["Debit bas"] = len(ou)-1;
-vals.append(-1)
-type.append("input")
-
-quoi.append("Debit haut");
-ou.append(0xA1);
-index["Debit haut"] = len(ou)-1;
-vals.append(-1)
-type.append("input")
-
-quoi.append("Consigne puissance");
-ou.append(0xB2);
-index["Consigne puissance"] = len(ou)-1;
-vals.append(-1)
-type.append("input")
-
-quoi.append("Consigne debit");
-ou.append(0xB3);
-index["Consigne debit"] = len(ou)-1;
-vals.append(-1)
-type.append("input")
-
-quoi.append("Generateur");
-ou.append(0xBB);
-index["Generateur"] = len(ou)-1;
-vals.append(-1)
-type.append("button")
-
-quoi.append("Gaz");
-ou.append(0xBC);
-index["Gaz"] = len(ou)-1;
-vals.append(-1)
-type.append("button")
-
-quoi.append("Plasma");
-ou.append(0xBD);
-index["Plasma"] = len(ou)-1;
-vals.append(-1)
-type.append("button")
-
-# ######################################################################################
-#                               CONNECTION
-# ######################################################################################
-ports = list(port_list.comports())
-# choice of the port to use
-if len(ports)==0:
-    sys.stdout.writelines("No serial port available\n")
-    sys.stdout.flush()
-    exit(3) # no serial port
-#    sys.stdout.writelines("there are several possible ports\n")
-lesInstruments = []
-for k,port in enumerate(ports):
-    ser = serial.Serial(port.device)
-    ser.timeout = TIMEOUT # seconds
-    instrument = minimalmodbus.Instrument(ser, SLAVE)
-    instrument.serial.baudrate = BAUD
-    instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
-    instrument.mode = 'rtu'
-    # instrument.debug = True
-    instrument.timeout = ser.timeout
-    try:
-        ans = instrument.read_registers(ALIVE_ADDRESS,1)
-        lesInstruments.append(instrument)        
-    except :
-        pass
-    ser.close()
-k = 0 # index du port a utiliser
-if len(lesInstruments)>1: # sinon k=0
-    for k,inst in enumerate(lesInstruments):
-        print("index : %d port : %s\n"%(k,inst.serial.port))
-    sys.stdout.writelines("Enter the index of the port you want use ");
-    sys.stdout.flush()
-    ans = sys.stdin.readline()
-    k = int(ans)
-instrument = lesInstruments[k]
-sys.stdout.writelines("using %s at %d baud parity %c\n"%(instrument.serial.name,instrument.serial.baudrate,instrument.serial.parity))
-sys.stdout.flush()
-cpt = 0
-#######################################################################################
-#                               INFINITE LOOP
-#######################################################################################
-mySt = nonBlockingString() # pour faire une lecture non bloquante du clavier
-somethingNew = True
-lastCheckAlive = 0
-while True:
-    time.sleep(0.1)
-    cpt += 1
-    currentTime = time.time()
-    if currentTime - lastCheckAlive > WATCHDOGTIMESEC:
-        lastCheckAlive = currentTime
-        if not isAlive():
-            sys.stdout.writelines("The connection is down !")
+        # print(f"entering readRegister {add}");
+        readingPossible = False    
+        ok = 1
+        ans = [-1]
+        try:
+            ans = self.instrument.read_registers(add,1)
+        except :
+            sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
+            if add == ALIVE_ADDRESS: # ie probably a test isAlive()
+                sys.stdout.writelines("The board is probably not powered\n")
             sys.stdout.flush()
-            break
-    if somethingNew:
-        somethingNew = False
-        ans = getRegisters()
-        sys.stdout.writelines(ans)
-        sys.stdout.writelines("\nenter the register number and the value to set, or q for quit : ")
+            ok = 0
+        if not ok:
+            exit(2) #read error
+        # print(f"leaving readRegister {add}")
+        return ans[0]
+    # FIN  def readRegister(self,add):
+
+    def getRegisters(self):
+        """
+        set vals and return a string ready to be printed
+        if a reading fails an empty string is return instead
+        """
+        ans = ""
+        ok = 1
+        for i in range(len(self.ou)):
+            v = self.readRegister(self.ou[i])
+            self.vals[i] = v
+            ans += "%2d Ox%x %3d %26s %5d  %s\n"%(i,self.ou[i],self.ou[i],self.quoi[i],self.vals[i],self.types[i])
+        return ans
+    # FIN def getRegisters(self):
+
+    def isAlive(self):
+        ans = self.readRegister(ALIVE_ADDRESS)
+        return ans==ALIVE_VALUE
+    # FIN def isAlive():
+
+    def writeRegister(self,add,value):
+        """
+        exit if can't write
+        """
+        # print(f"entering writeRegister {add}")
+        readingPossible = False
+        ok = 1
+        try:
+            self.instrument.write_register(add,value)
+        except :
+            sys.stdout.writelines("writeRegister: Could not write register at 0x%x = %d\n"%(add,add))
+            sys.stdout.flush()
+            ok = 0
+        if not ok:
+            exit(1) # write error
+        #print(f"leaving writeRegister {add}")
+    # FIN def writeRegister(add,value):
+
+    def readRegister(self,add):
+        """
+        return the int value read, exit if can't read
+        """
+        # print(f"entering readRegister {add}");
+        readingPossible = False    
+        ok = 1
+        ans = [-1]
+        try:
+            ans = self.instrument.read_registers(add,1)
+        except :
+            sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
+            if add == ALIVE_ADDRESS: # ie probably a test isAlive()
+                sys.stdout.writelines("The board is probably not powered\n")
+            sys.stdout.flush()
+            ok = 0
+        if not ok:
+            exit(2) #read error
+        # print(f"leaving readRegister {add}")
+        return ans[0]
+    # FIN  def readRegister(add)
+    
+    def connect(self):
+        """
+        connect the instrument
+        """
+        ports = list(port_list.comports())
+        # choice of the port to use
+        if len(ports)==0:
+            sys.stdout.writelines("No serial port available\n")
+            sys.stdout.flush()
+            exit(3) # no serial port
+        #    sys.stdout.writelines("there are several possible ports\n")
+        lesInstruments = [] # instruments that can be used
+        for k,port in enumerate(ports): # try to use all listed ports
+            ser = serial.Serial(port.device)
+            ser.timeout = TIMEOUT # seconds
+            instrument = minimalmodbus.Instrument(ser, SLAVE)
+            instrument.serial.baudrate = BAUD
+            instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
+            instrument.mode = 'rtu'
+            # instrument.debug = True
+            instrument.timeout = ser.timeout
+            try:
+                ans = instrument.read_registers(ALIVE_ADDRESS,1)
+                lesInstruments.append(instrument)        
+            except :
+                pass
+            ser.close()
+        k = 0 # index du port a utiliser
+        if len(lesInstruments)>1: # else only k=0ask wihich one to use if more than 1
+            for k,inst in enumerate(lesInstruments):
+                print("index : %d port : %s\n"%(k,inst.serial.port))
+            sys.stdout.writelines("Enter the index of the port you want use ");
+            sys.stdout.flush()
+            ans = sys.stdin.readline()
+            k = int(ans)
+        # use the port with index k
+        port = ports[k]
+        ser = serial.Serial(port.device)
+        ser.timeout = TIMEOUT # seconds
+        self.instrument = minimalmodbus.Instrument(ser, SLAVE)
+        self.instrument.serial.baudrate = BAUD
+        self.instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
+        self.instrument.mode = 'rtu'
+        self.instrument.timeout = ser.timeout
+        # self.instrument.debug = True
+        sys.stdout.writelines("using %s at %d baud parity %c\n"%(self.instrument.serial.name,self.instrument.serial.baudrate,self.instrument.serial.parity))
         sys.stdout.flush()
-    # ans = input("entrer le numéro du registre et la valeur a y mettre, ou q pour quitter ")
-    ans = mySt.getKbd()
-    if ans==None:
-        continue
+    # FIN connect(self)
+    
+# FIN class geneControler
+# ***********************************************************************************
+
+if __name__ == '__main__':
+    import msvcrt
+
+    class nonBlockingString:
+        """
+        Cette classe permet une lecture NON bloquente du clavier.
+        La chaine se termine par '\\n' ou '\\r', elle n'est retournee
+        par getKbd() que lorsqu'elle est complete, sinon None est retourne
+        """
+        def __init__(self):
+            self.str = ""
+        def getKbd(self):
+            """
+            retourne la chaine si elle est complete (finie par \\n ou \\r) None sinon
+            """
+            if msvcrt.kbhit():
+                self.car = msvcrt.getche()
+                self.str += self.car.decode()
+                if self.car == b'\r' or self.car == b'\n':
+                    aux = self.str
+                    self.str = ""
+                    return aux
+    # FIN class nonBlockingString:
+    # ***********************************************************************************
+
+    myGene = geneControler()
+    myGene.connect()
+    mySt = nonBlockingString() # pour faire une lecture non bloquante du clavier
     somethingNew = True
-    sys.stdout.writelines("\n")
-    sys.stdout.flush()
-    if ans=='q\r':
-        break
-    ans = ans.split()
-    if len(ans)!=2:
-        continue
-    try:
-        ans = list(map(int,ans))
-    except:
-        continue
-    o,q = ans
-    sys.stdout.writelines("\n")
-    sys.stdout.flush()
-    if o<0 or o>=len(ou):
-        sys.stdout.writelines("%d is not the index of a register\n"%o)
+    lastCheckAlive = 0
+    cpt = 0
+    while True:
+        time.sleep(0.1)
+        cpt += 1
+        currentTime = time.time()
+        if currentTime - lastCheckAlive > WATCHDOGTIMESEC:
+            lastCheckAlive = currentTime
+            if not myGene.isAlive():
+                sys.stdout.writelines("The connection is down !")
+                sys.stdout.flush()
+                break
+        if somethingNew:
+            somethingNew = False
+            ans = myGene.getRegisters()
+            sys.stdout.writelines(ans)
+            sys.stdout.writelines("\nenter the register number and the value to set, or q for quit : ")
+            sys.stdout.flush()
+        # ans = input("entrer le numéro du registre et la valeur a y mettre, ou q pour quitter ")
+        ans = mySt.getKbd()
+        if ans==None:
+            continue
+        somethingNew = True
+        sys.stdout.writelines("\n")
         sys.stdout.flush()
-        continue
-    if q<0 or q>=65536:
-        sys.stdout.writelines("the value %d is out of bonds\n"%q)
+        if ans=='q\r':
+            break
+        ans = ans.split()
+        if len(ans)!=2:
+            continue
+        try:
+            ans = list(map(int,ans))
+        except:
+            continue
+        o,q = ans
+        sys.stdout.writelines("\n")
         sys.stdout.flush()
-        continue
-    vals[o] = q
-    writeRegister(ou[o],q)
+        if o<0 or o>=len(myGene.ou):
+            sys.stdout.writelines("%d is not the index of a register\n"%o)
+            sys.stdout.flush()
+            continue
+        if q<0 or q>=65536:
+            sys.stdout.writelines("the value %d is out of bonds\n"%q)
+            sys.stdout.flush()
+            continue
+        myGene.vals[o] = q
+        myGene.writeRegister(myGene.ou[o],q)
