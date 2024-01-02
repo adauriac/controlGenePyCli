@@ -51,7 +51,7 @@ def getRegisters():
     for i in range(len(ou)):
         v = readRegister(ou[i])
         vals[i] = v
-        ans += "%2d Ox%x %3d %26s %5d  %c\n"%(i,ou[i],ou[i],quoi[i],vals[i],'*' if writes[i] else  ' ')
+        ans += "%2d Ox%x %3d %26s %5d  %s\n"%(i,ou[i],ou[i],quoi[i],vals[i],type[i])
     return ans
 # FIN def getRegisters():
 
@@ -105,109 +105,103 @@ quoi = []
 ou = []
 index= dict()
 vals = []
-writes = []
-
-quoi.append("Generateur");
-ou.append(0xBB);
-index["Generateur"] = len(ou)-1;
-vals.append(-1)
-writes.append(False)
-
-quoi.append("Gaz");
-ou.append(0xBC);
-index["Gaz"] = len(ou)-1;
-vals.append(-1)
-writes.append(False)
-
-quoi.append("Plasma");
-ou.append(0xBD);
-index["Plasma"] = len(ou)-1;
-vals.append(-1)
-writes.append(False)
+type = [] # "led", "button", "output", "input"
 
 quoi.append("Arret d'urgence");
 ou.append(0x65);
 index["Arret d'urgence"] = len(ou)-1;
 vals.append(-1)
-writes.append(False)
+type.append("led")
 
 quoi.append("Defaut critique");
 ou.append(0x66);
 index["Defaut critique"] = len(ou)-1;
 vals.append(-1)
-writes.append(False)
-
-quoi.append("Etat du procede");
-ou.append(0x6E);
-index["Etat du procede"] = len(ou)-1;
-vals.append(-1)
-writes.append(False)
-
-quoi.append("Consigne puissance");
-ou.append(0xB2);
-index["Consigne puissance"] = len(ou)-1;
-vals.append(-1)
-writes.append(True)
-
-quoi.append("Consigne debit");
-ou.append(0xB3);
-index["Consigne debit"] = len(ou)-1;
-vals.append(-1)
-writes.append(True)
-
-quoi.append("Mesure puissance");
-ou.append(0x6B);
-index["Mesure puissance"] = len(ou)-1;
-vals.append(-1)
-writes.append(False)
+type.append("led")
 
 quoi.append("Mesure debit");
 ou.append(0x68);
 index["Mesure debit"] = len(ou)-1;
 vals.append(-1)
-writes.append(False)
+type.append("output")
 
-quoi.append("Courant pont");
-ou.append(0x7F);
-index["Courant pont"] = len(ou)-1;
+quoi.append("Mesure puissance");
+ou.append(0x6B);
+index["Mesure puissance"] = len(ou)-1;
 vals.append(-1)
-writes.append(False)
+type.append("output")
+
+quoi.append("Etat du procede");
+ou.append(0x6E);
+index["Etat du procede"] = len(ou)-1;
+vals.append(-1)
+type.append("led")
 
 quoi.append("Tension PFC ");
 ou.append(0x72);
 index["Tension PFC "] = len(ou)-1;
 vals.append(-1)
-writes.append(False)
+type.append("output")
+
+quoi.append("Courant pont");
+ou.append(0x7F);
+index["Courant pont"] = len(ou)-1;
+vals.append(-1)
+type.append("output")
 
 quoi.append("Puissance limite basse");
 ou.append(0x96);
 index["Puissance limite basse"] = len(ou)-1;
 vals.append(-1)
-writes.append(True)
+type.append("input")
 
 quoi.append("Puissance limite haute");
 ou.append(0x97);
 index["Puissance limite haute"] = len(ou)-1;
 vals.append(-1)
-writes.append(True)
+type.append("input")
 
 quoi.append("Debit bas");
 ou.append(0xA0);
 index["Debit bas"] = len(ou)-1;
 vals.append(-1)
-writes.append(True)
+type.append("input")
 
 quoi.append("Debit haut");
 ou.append(0xA1);
 index["Debit haut"] = len(ou)-1;
 vals.append(-1)
-writes.append(True)
+type.append("input")
 
-writables = []
-for k,f in enumerate(writes):
-    if f:
-        writables.append(k)
-addWritables = list(map(lambda x:ou[x],writables))
+quoi.append("Consigne puissance");
+ou.append(0xB2);
+index["Consigne puissance"] = len(ou)-1;
+vals.append(-1)
+type.append("input")
+
+quoi.append("Consigne debit");
+ou.append(0xB3);
+index["Consigne debit"] = len(ou)-1;
+vals.append(-1)
+type.append("input")
+
+quoi.append("Generateur");
+ou.append(0xBB);
+index["Generateur"] = len(ou)-1;
+vals.append(-1)
+type.append("button")
+
+quoi.append("Gaz");
+ou.append(0xBC);
+index["Gaz"] = len(ou)-1;
+vals.append(-1)
+type.append("button")
+
+quoi.append("Plasma");
+ou.append(0xBD);
+index["Plasma"] = len(ou)-1;
+vals.append(-1)
+type.append("button")
 
 # ######################################################################################
 #                               CONNECTION
@@ -290,12 +284,10 @@ while True:
     except:
         continue
     o,q = ans
+    sys.stdout.writelines("\n")
+    sys.stdout.flush()
     if o<0 or o>=len(ou):
-        sys.stdout.writelines("the register %d is not a writable register\n"%o)
-        sys.stdout.flush()
-        continue
-    if not ou[o] in addWritables:
-        sys.stdout.writelines("This register is not writeable\n")
+        sys.stdout.writelines("%d is not the index of a register\n"%o)
         sys.stdout.flush()
         continue
     if q<0 or q>=65536:
