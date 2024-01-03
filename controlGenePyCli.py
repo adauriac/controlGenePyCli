@@ -5,6 +5,13 @@ import serial.tools.list_ports as port_list
 import time,sys
 """
                                  WITH A POLLING WATCHDOG (NO THREAD OR RACE)
+class geneControler : can connect and read/write registers
+at initialization one can provide,or not, a function to treat the error,
+if no function is provided an exit is performed
+at connect a function can be provided to choose the serial port,
+if no function provided take the first encountered.
+
+
 Connection at BAUD,'N',8,1.
 The choosen COM is asked to keyboard if there are more than one.
 An infinite loop tests the keyboard in a NON blocking way therefore the loop is short.
@@ -27,7 +34,8 @@ class geneControler:
     vals = []
     types = [] # "led", "button", "output", "input"
     instrument = "";
-    def __init__(self):
+    def __init__(self,myFun=""):
+        self.errorTreat = myFun;
         self.quoi.append("Arret d'urgence");
         self.ou.append(0x65);
         self.index["Arret d'urgence"] = len(self.ou)-1;
@@ -142,7 +150,10 @@ class geneControler:
             sys.stdout.flush()
             ok = 0
         if not ok:
-            exit(2) #read error
+            if self.treatErr!= "":
+                self.errorTreat(2)
+            else:
+                exit(2) #read error
         # print(f"leaving readRegister {add}")
         return ans[0]
     # FIN  def readRegister(self,add):
@@ -168,7 +179,7 @@ class geneControler:
 
     def writeRegister(self,add,value):
         """
-        exit if can't write
+        call errorTreat or exit if can't write
         """
         # print(f"entering writeRegister {add}")
         readingPossible = False
@@ -180,7 +191,10 @@ class geneControler:
             sys.stdout.flush()
             ok = 0
         if not ok:
-            exit(1) # write error
+            if self.treatErr!= "":
+                self.errorTreat(1)
+            else:
+                exit(1) # write error
         #print(f"leaving writeRegister {add}")
     # FIN def writeRegister(add,value):
 
@@ -195,27 +209,34 @@ class geneControler:
         try:
             ans = self.instrument.read_registers(add,1)
         except :
-            sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
-            if add == ALIVE_ADDRESS: # ie probably a test isAlive()
-                sys.stdout.writelines("The board is probably not powered\n")
-            sys.stdout.flush()
+            # sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
+            # if add == ALIVE_ADDRESS: # ie probably a test isAlive()
+            #     sys.stdout.writelines("The board is probably not powered\n")
+            # sys.stdout.flush()
             ok = 0
         if not ok:
-            exit(2) #read error
+            if self.errorTreat!= "":
+                self.errorTreat(2)
+            else:
+                exit(2) #read error
         # print(f"leaving readRegister {add}")
         return ans[0]
     # FIN  def readRegister(add)
     
-    def connect(self):
+    def connect(self,choiceFun=""):
         """
         connect the instrument
         """
+        self.portChooser = choiceFun
         ports = list(port_list.comports())
         # choice of the port to use
         if len(ports)==0:
             sys.stdout.writelines("No serial port available\n")
             sys.stdout.flush()
-            exit(3) # no serial port
+            if self.errorTreat!= "":
+                self.errorTreat(3)
+            else:
+                exit(3) # no serial port
         #    sys.stdout.writelines("there are several possible ports\n")
         lesInstruments = [] # instruments that can be used
         for k,port in enumerate(ports): # try to use all listed ports
@@ -233,14 +254,18 @@ class geneControler:
             except :
                 pass
             ser.close()
-        k = 0 # index du port a utiliser
-        if len(lesInstruments)>1: # else only k=0ask wihich one to use if more than 1
+        if len(lesInstruments)==0:
+            if self.errorTreat!= "":
+                self.errorTreat(4)
+            else:
+                exit(4) # no serial port
+        k = 0 # index of the port to use if no choice or not function provided
+        if len(lesInstruments)>1 and self.portChooser != "": # else only k=0ask wihich one to use if more than 1
+            st = ""
             for k,inst in enumerate(lesInstruments):
-                print("index : %d port : %s\n"%(k,inst.serial.port))
-            sys.stdout.writelines("Enter the index of the port you want use ");
-            sys.stdout.flush()
-            ans = sys.stdin.readline()
-            k = int(ans)
+                st += "index : %d port : %s\n"%(k,inst.serial.port)
+            st += "Enter the index of the port you want use "
+            k = self.portChooser(st)
         # use the port with index k
         port = ports[k]
         ser = serial.Serial(port.device)
@@ -282,9 +307,28 @@ if __name__ == '__main__':
                     return aux
     # FIN class nonBlockingString:
     # ***********************************************************************************
+    
+    def myFun(p):
+        """
+        function called in case of error, with the parameter p:
+        p=1 write error timeouut
+        p=2 read error timeout
+        p=3 no serial port
+        p=4 not alive (ie bad reading by the watchDog)
+        """
+        print(f"oops j'ai recu la valeur {p}")
+        exit(p)
+    # FIN myFun(p)
+    # ***********************************************************************************
 
-    myGene = geneControler()
-    myGene.connect()
+    def portChooser(p):
+        a = input(p)
+        return int(a)
+    # FIN myFunportChooser(p)
+    # ***********************************************************************************
+
+    myGene = geneControler(myFun)
+    myGene.connect(portChooser)
     mySt = nonBlockingString() # pour faire une lecture non bloquante du clavier
     somethingNew = True
     lastCheckAlive = 0
