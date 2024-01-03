@@ -209,10 +209,6 @@ class geneControler:
         try:
             ans = self.instrument.read_registers(add,1)
         except :
-            # sys.stdout.writelines("readRegister: Could not read register at 0x%x = %d\n"%(add,add))
-            # if add == ALIVE_ADDRESS: # ie probably a test isAlive()
-            #     sys.stdout.writelines("The board is probably not powered\n")
-            # sys.stdout.flush()
             ok = 0
         if not ok:
             if self.errorTreat!= "":
@@ -223,21 +219,16 @@ class geneControler:
         return ans[0]
     # FIN  def readRegister(add)
     
-    def connect(self,choiceFun=""):
+    def connect(self):
         """
         connect the instrument
+        return True if ok
+               a string describing the error else
         """
-        self.portChooser = choiceFun
         ports = list(port_list.comports())
         # choice of the port to use
         if len(ports)==0:
-            sys.stdout.writelines("No serial port available\n")
-            sys.stdout.flush()
-            if self.errorTreat!= "":
-                self.errorTreat(3)
-            else:
-                exit(3) # no serial port
-        #    sys.stdout.writelines("there are several possible ports\n")
+            return "No serial port available"
         lesInstruments = [] # instruments that can be used
         for k,port in enumerate(ports): # try to use all listed ports
             ser = serial.Serial(port.device)
@@ -255,19 +246,11 @@ class geneControler:
                 pass
             ser.close()
         if len(lesInstruments)==0:
-            if self.errorTreat!= "":
-                self.errorTreat(4)
-            else:
-                exit(4) # no serial port
-        k = 0 # index of the port to use if no choice or not function provided
-        if len(lesInstruments)>1 and self.portChooser != "": # else only k=0ask wihich one to use if more than 1
-            st = ""
-            for k,inst in enumerate(lesInstruments):
-                st += "index : %d port : %s\n"%(k,inst.serial.port)
-            st += "Enter the index of the port you want use "
-            k = self.portChooser(st)
-        # use the port with index k
-        port = ports[k]
+            return "no serial port connected to the generator"
+        if len(lesInstruments)>1 :
+            return "%d port connected to a generator, please plug only the desired one"%(len(lesInstruments))
+        # use the port with index 0
+        port = ports[0]
         ser = serial.Serial(port.device)
         ser.timeout = TIMEOUT # seconds
         self.instrument = minimalmodbus.Instrument(ser, SLAVE)
@@ -278,6 +261,7 @@ class geneControler:
         # self.instrument.debug = True
         sys.stdout.writelines("using %s at %d baud parity %c\n"%(self.instrument.serial.name,self.instrument.serial.baudrate,self.instrument.serial.parity))
         sys.stdout.flush()
+        return True
     # FIN connect(self)
     
 # FIN class geneControler
@@ -321,14 +305,11 @@ if __name__ == '__main__':
     # FIN myFun(p)
     # ***********************************************************************************
 
-    def portChooser(p):
-        a = input(p)
-        return int(a)
-    # FIN myFunportChooser(p)
-    # ***********************************************************************************
-
     myGene = geneControler(myFun)
-    myGene.connect(portChooser)
+    ans = myGene.connect()
+    if ans != True:
+        print(ans)
+        exit(1)
     mySt = nonBlockingString() # pour faire une lecture non bloquante du clavier
     somethingNew = True
     lastCheckAlive = 0
